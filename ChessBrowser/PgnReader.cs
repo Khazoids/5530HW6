@@ -8,9 +8,5 @@ namespace ChessBrowser
 {
     public class PgnReader
     {
-        int getColumnNum()
-        {
-
-        }
     }
 }

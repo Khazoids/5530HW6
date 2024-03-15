@@ -30,53 +30,120 @@ namespace ChessBrowser
             // assuimg you've typed a user and password in the GUI
             string connection = mainPage.GetConnectionString();
 
-            // TODO:
-            //       Load and parse the PGN file
-            //       We recommend creating separate libraries to represent chess data and load the file
 
-            // TODO:
-            //       Use this to tell the GUI's progress bar how many total work steps there are
-            //       For example, one iteration of your main upload loop could be one work step
-            //mainPage.SetNumWorkItems( ... );
-
+            // Load PGN file into string array
             string[] data = File.ReadAllLines(PGNfilename);
-            int blankCount = 0;
+           
+            // used to update the loading bar in the UI
+            mainPage.SetNumWorkItems(games);
 
-            foreach ( string line in data )
-            {
-                Debug.WriteLine(line);
-            }
+            int blankCounter = 0;
 
-
+            
             using (MySqlConnection conn = new MySqlConnection(connection))
             {
-                MySqlCommand command = conn.CreateCommand();
-                command.CommandText = "insert into Players (Elo, Name, pID) values(@val1, @val2, @val3); " +
-                    "insert into Players (Elo, Name, pID) values(@val4, @val5, @val6); insert into Events (Name, Site, Date, eID) values (@val7, @val8, @val9, @val10);" +
-                    "insert into Games (Round, Result, Moves, BlackPlayer, WhitePlayer, eID) values(@val11, @val12, @val13, @val3, @val6, @val10);";
 
-                for(int i = 0; i <= 13; i++)
-                {
-                    command.Parameters.AddWithValue(
-                        "@val" + i, 0);
-                }
-                command.Prepare();
-
-                foreach(string line in data )
-                {
-                    command.Parameters["@val" + getColumnNum(line)].Value = 100;
-                }
                 try
                 {
                     // Open a connection
                     conn.Open();
+                    
+                    // Create prepared statement
+                    MySqlCommand command = conn.CreateCommand();
+                    command.CommandText = "INSERT INTO Players (Elo, Name) VALUES (@val1, @val2) ON DUPLICATE KEY UPDATE Elo = IF(@val1 > Elo, @val1, Elo);" +
+                       "INSERT INTO Players (Elo, Name) VALUES (@val3, @val4) ON DUPLICATE KEY UPDATE Elo = IF(@val3 > Elo, @val3, Elo);" +
+                       "INSERT IGNORE INTO Events (Name, Site, Date) VALUES (@val5, @val6, @val7);" +
+                       "INSERT INTO Games (Round, Result, Moves, BlackPlayer, WhitePlayer, eID) VALUES (@val8, @val9, @val10, (SELECT pID FROM Players WHERE Name = @val4), (SELECT pID FROM Players WHERE Name = @val2), (SELECT eID FROM Events WHERE Name=@val5 AND Date=DATE(@val7) AND Site=@val6));";
 
-                    // TODO:
-                    //       iterate through your data and generate appropriate insert commands
+                    // Initialize prepared statement with placeholder values;
+                    for (int i = 0; i <= 10; i++)
+                    {
+                        command.Parameters.AddWithValue(
+                            "@val" + i, "");
+                    }
+                    command.Prepare();
 
-                    // TODO:
-                    //       Use this inside a loop to tell the GUI that one work step has completed:
-                    await mainPage.NotifyWorkItemCompleted();
+                    string moves = "";
+                    foreach (string line in data)
+                    {   
+                        // if we encounter a blank line, increment and continue
+                        if(line == "")
+                        {
+                            blankCounter++;
+                            continue;
+                        }
+
+                        // After the first blank, we are iterating over the moves
+                        if(blankCounter == 1)
+                        {
+                            moves += line; 
+                            continue;
+                        }
+
+                        if (blankCounter == 2)
+                        {
+                            command.Parameters["@val10"].Value = moves;  // If it's just the moves, we can set the parameter without any additional parsing
+                           
+                            command.ExecuteNonQuery();  
+                            await mainPage.NotifyWorkItemCompleted();   // notify loading bar on UI that a game has been added
+
+                            // reset counters for next game
+                            blankCounter = 0;
+                            moves = "";
+                        }
+
+                        if (line.StartsWith('['))    // Check if we're evaluating a new tag(row)
+                        {
+                            string[] tagAndValue = line.Substring(1, line.Length - 2).Split(" ", 2); // Get rid of the brackets from the string and split the tag from the actual string value. Ex. [ Event "Chess Tournament ] -> "Event", "Chess Tournament"
+                            string tag = tagAndValue[0];
+                            string value = tagAndValue[1];
+
+                            int parameterNumber = getColumnNum(tag);
+
+
+                            if(parameterNumber == 1 || parameterNumber == 3)    // If the tag is WhiteElo or BlackElo, then we need to convert to an int
+                            { 
+                                command.Parameters["@val" + parameterNumber].Value = int.Parse(value.Substring(1, value.Length - 2));
+                            }
+                            else if(parameterNumber == 9)   // If the tag is Result, then we need to format it into 'W', 'B', or 'D' depending on who won
+                            {
+                                char result;
+                                if (value.Equals("1-0"))
+                                {
+                                    result = 'W';
+                                }
+                                else if (value.Equals("0-1"))
+                                {
+                                    result = 'B';
+                                }
+                                else
+                                {
+                                    result = 'D';
+                                }
+
+                                command.Parameters["@val" + parameterNumber].Value = result;
+
+                            }
+                            else if (parameterNumber == 7)
+                            {
+                                if (line.Contains('?'))
+                                {
+                                    command.Parameters["@val" + parameterNumber].Value = "0000-00-00";
+                                } 
+                                else
+                                { 
+                                    command.Parameters["@val" + parameterNumber].Value = value.Substring(1, value.Length - 2).Replace('.', '-');   // Get the @val we want to update by passing the tag into getColumnNum. Then set its 
+                                }
+                            }
+                            else 
+                            {
+                                command.Parameters["@val" + parameterNumber].Value = value;   // Get the @val we want to update by passing the tag into getColumnNum. Then set its value
+                            }
+                            
+                            
+                        }
+                        
+                    }
 
                 }
                 catch (Exception e)
@@ -143,13 +210,31 @@ namespace ChessBrowser
         {
             switch(tag)
             {
-                case "Elo":
+                case "Event":
+                    return 5;
+                case "Site":
+                    return 6;
+                case "Round":
+                    return 8;
+                case "White":
+                    return 2;
+                case "Black":
+                    return 4;
+                case "Result":
+                    return 9;
+                case "WhiteElo":
                     return 1;
-                    
+                case "BlackElo":
+                    return 3;
+                case "EventDate":
+                    return 7;
                 default:
                     return 0;
             }
         }
-    }
+
+ 
+    } 
+   
 }
 
