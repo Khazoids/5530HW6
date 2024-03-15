@@ -35,7 +35,7 @@ namespace ChessBrowser
             string[] data = File.ReadAllLines(PGNfilename);
            
             // used to update the loading bar in the UI
-            mainPage.SetNumWorkItems(games);
+            mainPage.SetNumWorkItems(data.Length/32);
 
             int blankCounter = 0;
 
@@ -50,10 +50,10 @@ namespace ChessBrowser
                     
                     // Create prepared statement
                     MySqlCommand command = conn.CreateCommand();
-                    command.CommandText = "INSERT INTO Players (Elo, Name) VALUES (@val1, @val2) ON DUPLICATE KEY UPDATE Elo = IF(@val1 > Elo, @val1, Elo);" +
-                       "INSERT INTO Players (Elo, Name) VALUES (@val3, @val4) ON DUPLICATE KEY UPDATE Elo = IF(@val3 > Elo, @val3, Elo);" +
+                    command.CommandText = "INSERT IGNORE INTO Players (Elo, Name) VALUES (@val1, @val2) ON DUPLICATE KEY UPDATE Elo = IF(@val1 > Elo, @val1, Elo);" +
+                       "INSERT IGNORE INTO Players (Elo, Name) VALUES (@val3, @val4) ON DUPLICATE KEY UPDATE Elo = IF(@val3 > Elo, @val3, Elo);" +
                        "INSERT IGNORE INTO Events (Name, Site, Date) VALUES (@val5, @val6, @val7);" +
-                       "INSERT INTO Games (Round, Result, Moves, BlackPlayer, WhitePlayer, eID) VALUES (@val8, @val9, @val10, (SELECT pID FROM Players WHERE Name = @val4), (SELECT pID FROM Players WHERE Name = @val2), (SELECT eID FROM Events WHERE Name=@val5 AND Date=DATE(@val7) AND Site=@val6));";
+                       "INSERT IGNORE INTO Games (Round, Result, Moves, BlackPlayer, WhitePlayer, eID) VALUES (@val8, @val9, @val10, (SELECT pID FROM Players WHERE Name = @val4), (SELECT pID FROM Players WHERE Name = @val2), (SELECT eID FROM Events WHERE Name=@val5 AND Date=DATE(@val7) AND Site=@val6));";
 
                     // Initialize prepared statement with placeholder values;
                     for (int i = 0; i <= 10; i++)
