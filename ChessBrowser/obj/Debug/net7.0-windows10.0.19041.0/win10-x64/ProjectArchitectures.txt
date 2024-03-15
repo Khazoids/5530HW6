@@ -1,0 +1,1 @@
+C:\Users\Phill\Documents\University of Utah Documents\CS 5530 Databases\ChessBrowser_net7\ChessBrowser\ChessBrowser.csproj;x64
